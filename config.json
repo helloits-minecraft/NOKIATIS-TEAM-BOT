@@ -5,19 +5,27 @@
 
   "port": "3000",
   
-  "clientId": "1354105132618350693",
-  "guildId": "1280879965629317151",
+  "clientId": "1372932604717826180",
+  "guildId": "957587538699223060",
   "globalDeploy": false,
 
-  "status": "Working on NOKIATIS",
+  "ownerId": "YOUR_DISCORD_ID",
+
+  "LINKVERTISE_PUBLISHER_ID": "",
+  "LINKVERTISE_ANTI_BYPASS_TOKEN": "",
+
+  "status": "Hacking minecraft accounts",
   "website": "`",
   "banner": "https://media.discordapp.net/attachments/960440723369517106/996423763522506782/rainbow-border.gif",
-  "footer": "Made By NOKIATIS_YT",
+  "footer": "Made By Hacker",
 
-  "genChannel": "1354114693584781404",
-  "premiumChannel": "1354126367981047848",
+  "genChannel": "1372934998231089213",
+  "premiumChannel": "1372935821966966924",
   "genCooldown": "1800",
   "premiumCooldown": "900",
+
+  "freeLimit": 5,
+  "premiumLimit": 5,
 
   "color": {
     "green": "0x57F287",
