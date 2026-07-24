@@ -21,7 +21,6 @@ for (const file of commandFiles) {
 
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);
-  client.user.
   client.user.setActivity(`${config.status}`, { type: "WATCHING" }); // Set the bot's activity status
     /* You can change the activity type to:
      * LISTENING
@@ -33,6 +32,25 @@ client.once('ready', () => {
 });
 
 client.on("interactionCreate", async (interaction) => {
+  // Handle Linkvertise verify button clicks
+  if (interaction.isButton && interaction.isButton()) {
+    if (interaction.customId && interaction.customId.startsWith('lv_verify:')) {
+      try {
+        const parts = interaction.customId.split(':');
+        const userId = parts[1];
+        const service = parts.slice(2).join(':');
+        const freeCommand = client.commands.get('free');
+        if (freeCommand && typeof freeCommand.handleVerify === 'function') {
+          await freeCommand.handleVerify(interaction, userId, service);
+        }
+      } catch (error) {
+        console.error(error);
+        try { await interaction.reply({ content: '❌ Verification error.', ephemeral: true }); } catch (_) {}
+      }
+      return;
+    }
+  }
+
   if (!interaction.isCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
@@ -47,4 +65,3 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 client.login(process.env.token || token);
-
