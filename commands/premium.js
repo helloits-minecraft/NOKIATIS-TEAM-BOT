@@ -3,6 +3,7 @@ const { MessageEmbed } = require('discord.js');
 const fs = require('fs');
 const config = require('../config.json');
 const CatLoggr = require('cat-loggr');
+const users = require('../utils/users');
 
 const log = new CatLoggr();
 const generated = new Set();
@@ -19,8 +20,9 @@ module.exports = {
     async execute(interaction) {
         const service = interaction.options.getString('service');
         const member = interaction.member;
+        const userId = interaction.user.id;
 
-        // Check if the channel where the command was used is the generator channel
+        // Channel restriction (preserved)
         if (interaction.channelId !== config.premiumChannel) {
             const wrongChannelEmbed = new MessageEmbed()
                 .setColor(config.color.red)
@@ -28,11 +30,32 @@ module.exports = {
                 .setDescription(`You cannot use the \`/premium\` command in this channel! Try it in <#${config.premiumChannel}>!`)
                 .setFooter(interaction.user.tag, interaction.user.displayAvatarURL({ dynamic: true, size: 64 }))
                 .setTimestamp();
-
             return interaction.reply({ embeds: [wrongChannelEmbed], ephemeral: true });
         }
 
-        // Check if the user has cooldown on the command
+        // Authorization
+        if (!users.isAuthorized(userId)) {
+            return interaction.reply({ content: '❌ You are not authorized to use this bot.', ephemeral: true });
+        }
+
+        // Premium-only (owner bypasses)
+        if (!users.isOwner(userId)) {
+            const u = users.findUser(userId);
+            if (!u || u.type !== 'premium') {
+                return interaction.reply({ content: '❌ Premium users only.', ephemeral: true });
+            }
+        }
+
+        // Limit
+        const limitCheck = users.checkLimit(userId, 'premium');
+        if (!limitCheck.allowed && !limitCheck.ownerBypass) {
+            if (limitCheck.reason === 'premium_only') {
+                return interaction.reply({ content: '❌ Premium users only.', ephemeral: true });
+            }
+            return interaction.reply({ content: '❌ You have reached your Premium generation limit.', ephemeral: true });
+        }
+
+        // Cooldown
         if (generated.has(member.id)) {
             const cooldownEmbed = new MessageEmbed()
                 .setColor(config.color.red)
@@ -40,15 +63,12 @@ module.exports = {
                 .setDescription(`Please wait **${config.premiumCooldown}** seconds before executing that command again!`)
                 .setFooter(interaction.user.tag, interaction.user.displayAvatarURL({ dynamic: true, size: 64 }))
                 .setTimestamp();
-
             return interaction.reply({ embeds: [cooldownEmbed], ephemeral: true });
         }
 
-        // File path to find the given service
         const filePath = `${__dirname}/../premium/${service}.txt`;
 
-        // Read the service file
-        fs.readFile(filePath, 'utf-8', (error, data) => {
+        fs.readFile(filePath, 'utf-8', async (error, data) => {
             if (error) {
                 const notFoundEmbed = new MessageEmbed()
                     .setColor(config.color.red)
@@ -56,34 +76,30 @@ module.exports = {
                     .setDescription(`Service \`${service}\` does not exist!`)
                     .setFooter(interaction.user.tag, interaction.user.displayAvatarURL({ dynamic: true, size: 64 }))
                     .setTimestamp();
-
                 return interaction.reply({ embeds: [notFoundEmbed], ephemeral: true });
             }
 
             const lines = data.split(/\r?\n/);
-
-            if (lines.length <= 1) {
+            const nonEmpty = lines.filter(l => l.length > 0);
+            if (nonEmpty.length < 1) {
                 const emptyServiceEmbed = new MessageEmbed()
                     .setColor(config.color.red)
                     .setTitle('Generator error!')
                     .setDescription(`The \`${service}\` service is empty!`)
                     .setFooter(interaction.user.tag, interaction.user.displayAvatarURL({ dynamic: true, size: 64 }))
                     .setTimestamp();
-
                 return interaction.reply({ embeds: [emptyServiceEmbed], ephemeral: true });
             }
 
+            // Original stock removal semantics: remove the FIRST line exactly like current implementation.
             const generatedAccount = lines[0];
-
-            // Remove the redeemed account line
             lines.shift();
             const updatedData = lines.join('\n');
 
-            // Write the updated data back to the file
-            fs.writeFile(filePath, updatedData, (writeError) => {
+            fs.writeFile(filePath, updatedData, async (writeError) => {
                 if (writeError) {
                     log.error(writeError);
-                    return interaction.reply('An error occurred while redeeming the account.');
+                    return interaction.reply({ content: '❌ An error occurred while redeeming the account.', ephemeral: true });
                 }
 
                 const embedMessage = new MessageEmbed()
@@ -96,16 +112,25 @@ module.exports = {
                     .setImage(config.banner)
                     .setTimestamp();
 
-                member.send({ embeds: [embedMessage] })
-                    .catch(error => console.error(`Error sending embed message: ${error}`));
-                interaction.reply({
-                    content: `**Check your DM ${member}!** __If you do not receive the message, please unlock your private!__`,
-                });
+                try {
+                    await interaction.user.send({ embeds: [embedMessage] });
+                } catch (dmErr) {
+                    // Restore account to top of file – DMs closed.
+                    try {
+                        const current = fs.readFileSync(filePath, 'utf-8');
+                        const restored = generatedAccount + (current.startsWith('\n') || current.length === 0 ? '' : '\n') + current;
+                        fs.writeFileSync(filePath, restored);
+                    } catch (_) { /* best effort */ }
+                    return interaction.reply({ content: '❌ Please enable your DMs and try again.', ephemeral: true });
+                }
+
+                // Increment usage & save
+                users.incrementUsage(userId, 'premium');
+
+                interaction.reply({ content: '✅ Check your DMs.', ephemeral: true });
 
                 generated.add(member.id);
-                setTimeout(() => {
-                    generated.delete(member.id);
-                }, config.premiumCooldown * 1000);
+                setTimeout(() => generated.delete(member.id), config.premiumCooldown * 1000);
             });
         });
     },
